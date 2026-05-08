@@ -14,11 +14,13 @@ All environment variables that Paperclip uses for server configuration.
 | `PAPERCLIP_BIND_HOST` | (unset) | Required when `PAPERCLIP_BIND=custom` |
 | `HOST` | `127.0.0.1` | Legacy host override; prefer `PAPERCLIP_BIND` for new setups |
 | `DATABASE_URL` | (embedded) | PostgreSQL connection string |
+| `PAPERCLIP_DATABASE_NAME` | (unset) | Optional database name override applied to `DATABASE_URL`. Useful when sharing a managed Postgres cluster secret while keeping Paperclip in its own database. |
 | `PAPERCLIP_HOME` | `~/.paperclip` | Base directory for all Paperclip data |
 | `PAPERCLIP_INSTANCE_ID` | `default` | Instance identifier (for multiple local instances) |
 | `PAPERCLIP_DEPLOYMENT_MODE` | `local_trusted` | Runtime mode override |
 | `PAPERCLIP_DEPLOYMENT_EXPOSURE` | `private` | Exposure policy when deployment mode is `authenticated` |
 | `PAPERCLIP_API_URL` | (auto-derived) | Paperclip API base URL. When set externally (e.g., via Kubernetes ConfigMap, load balancer, or reverse proxy), the server preserves the value instead of deriving it from the listen host and port. Useful for deployments where the public-facing URL differs from the local bind address. |
+| `PAPERCLIP_TRUST_CLOUD_TENANT_HEADERS` | `false` | Trust first-party Cloud tenant headers without `PAPERCLIP_CLOUD_TENANT_SERVER_TOKEN`. Only use behind an internal/private service boundary where callers cannot spoof headers. |
 
 ## Secrets
 

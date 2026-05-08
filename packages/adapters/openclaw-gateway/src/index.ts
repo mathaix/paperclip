@@ -37,6 +37,9 @@ Request behavior fields:
 - autoPairOnFirstConnect (boolean, optional): on first "pairing required", attempt device.pair.list/device.pair.approve via shared auth, then retry once (default true)
 - paperclipApiUrl (string, optional): absolute Paperclip base URL advertised in wake text
 - claimedApiKeyPath (string, optional): path to the claimed API key JSON file read by the agent at wake time (default ~/.openclaw/workspace/paperclip-claimed-api-key.json)
+- paperclipCallbackMode (string, optional): use openclaw_metadata_proxy for OpenClaw Machines so callbacks go through the VM metadata proxy instead of a raw Paperclip API key
+- paperclipContextPath (string, optional): metadata path for Paperclip binding context (default /v1/admin/paperclip/context)
+- paperclipProxyBasePath (string, optional): metadata proxy base path for Paperclip API calls (default /v1/admin/paperclip/proxy)
 
 Session routing fields:
 - sessionKeyStrategy (string, optional): issue (default), fixed, or run

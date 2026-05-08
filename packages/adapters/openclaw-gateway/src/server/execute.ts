@@ -30,6 +30,14 @@ type WakePayload = {
   issueIds: string[];
 };
 
+type PaperclipCallbackMode = {
+  mode: "api_key" | "openclaw_metadata_proxy";
+  contextPath: string;
+  proxyBasePath: string;
+  metadataUrlEnv: string;
+  metadataNonceEnv: string;
+};
+
 type GatewayDeviceIdentity = {
   deviceId: string;
   publicKeyRawBase64Url: string;
@@ -92,6 +100,10 @@ const DEFAULT_CLIENT_ID = "gateway-client";
 const DEFAULT_CLIENT_MODE = "backend";
 const DEFAULT_CLIENT_VERSION = "paperclip";
 const DEFAULT_ROLE = "operator";
+const DEFAULT_OCM_METADATA_URL_ENV = "OCM_METADATA_URL";
+const DEFAULT_OCM_METADATA_NONCE_ENV = "OCM_METADATA_NONCE";
+const DEFAULT_OCM_PAPERCLIP_CONTEXT_PATH = "/v1/admin/paperclip/context";
+const DEFAULT_OCM_PAPERCLIP_PROXY_BASE_PATH = "/v1/admin/paperclip/proxy";
 
 const SENSITIVE_LOG_KEY_PATTERN =
   /(^|[_-])(auth|authorization|token|secret|password|api[_-]?key|private[_-]?key)([_-]|$)|^x-openclaw-(auth|token)$/i;
@@ -361,12 +373,43 @@ function buildPaperclipEnvForWake(ctx: AdapterExecutionContext, wakePayload: Wak
   return paperclipEnv;
 }
 
+function resolvePaperclipCallbackMode(config: Record<string, unknown>): PaperclipCallbackMode {
+  const mode = nonEmpty(config.paperclipCallbackMode)?.toLowerCase();
+  const contextPath = nonEmpty(config.paperclipContextPath) ?? DEFAULT_OCM_PAPERCLIP_CONTEXT_PATH;
+  const proxyBasePath = nonEmpty(config.paperclipProxyBasePath) ?? DEFAULT_OCM_PAPERCLIP_PROXY_BASE_PATH;
+  const metadataUrlEnv = nonEmpty(config.paperclipMetadataUrlEnv) ?? DEFAULT_OCM_METADATA_URL_ENV;
+  const metadataNonceEnv = nonEmpty(config.paperclipMetadataNonceEnv) ?? DEFAULT_OCM_METADATA_NONCE_ENV;
+  const useMetadataProxy =
+    mode === "openclaw_metadata_proxy" ||
+    mode === "ocm_metadata_proxy" ||
+    parseBoolean(config.paperclipUseMetadataProxy, false) ||
+    nonEmpty(config.paperclipProxyBasePath) !== null;
+
+  if (!useMetadataProxy) {
+    return {
+      mode: "api_key",
+      contextPath,
+      proxyBasePath,
+      metadataUrlEnv,
+      metadataNonceEnv,
+    };
+  }
+
+  return {
+    mode: "openclaw_metadata_proxy",
+    contextPath,
+    proxyBasePath,
+    metadataUrlEnv,
+    metadataNonceEnv,
+  };
+}
+
 function buildWakeText(
   payload: WakePayload,
   paperclipEnv: Record<string, string>,
   structuredWakePrompt: string,
+  callback: PaperclipCallbackMode,
 ): string {
-  const claimedApiKeyPath = "~/.openclaw/workspace/paperclip-claimed-api-key.json";
   const orderedKeys = [
     "PAPERCLIP_RUN_ID",
     "PAPERCLIP_AGENT_ID",
@@ -389,6 +432,41 @@ function buildWakeText(
 
   const issueIdHint = payload.taskId ?? payload.issueId ?? "";
   const apiBaseHint = paperclipEnv.PAPERCLIP_API_URL ?? "<set PAPERCLIP_API_URL>";
+  const httpRuleLines =
+    callback.mode === "openclaw_metadata_proxy"
+      ? [
+          "HTTP rules:",
+          `- Use the OpenClaw metadata proxy for every Paperclip API call: $${callback.metadataUrlEnv}${callback.proxyBasePath}/api/...`,
+          `- Send X-Metadata-Nonce: $${callback.metadataNonceEnv} on every metadata proxy call.`,
+          "- Send X-Paperclip-Run-Id: $PAPERCLIP_RUN_ID on every mutating proxy call.",
+          "- Do NOT load PAPERCLIP_API_KEY and do NOT send Authorization yourself in OCM metadata-proxy mode.",
+          "- First, fetch Paperclip binding context from the metadata server:",
+          `  GET $${callback.metadataUrlEnv}${callback.contextPath}`,
+          `- Select the ready binding whose paperclip_agent_id equals $PAPERCLIP_AGENT_ID, then append binding_id=<binding_id> to every proxied Paperclip API request.`,
+          `- When this workflow says GET/POST/PATCH /api/..., send it to $${callback.metadataUrlEnv}${callback.proxyBasePath}/api/... instead.`,
+          "- Use only /api endpoints listed below after the proxy base path.",
+          "- Do NOT call guessed endpoints like /api/cloud-adapter/*, /api/cloud-adapters/*, /api/adapters/cloud/*, or /api/heartbeat.",
+        ]
+      : [
+          "HTTP rules:",
+          "- Use Authorization: Bearer $PAPERCLIP_API_KEY on every API call.",
+          "- Use X-Paperclip-Run-Id: $PAPERCLIP_RUN_ID on every mutating API call.",
+          "- Use only /api endpoints listed below.",
+          "- Do NOT call guessed endpoints like /api/cloud-adapter/*, /api/cloud-adapters/*, /api/adapters/cloud/*, or /api/heartbeat.",
+        ];
+  const credentialLines =
+    callback.mode === "openclaw_metadata_proxy"
+      ? [
+          `PAPERCLIP_CONTEXT_URL=$${callback.metadataUrlEnv}${callback.contextPath}`,
+          `PAPERCLIP_PROXY_BASE_URL=$${callback.metadataUrlEnv}${callback.proxyBasePath}`,
+          "",
+          "Use the metadata proxy context to resolve PAPERCLIP_BINDING_ID before making Paperclip API calls.",
+        ]
+      : [
+          `PAPERCLIP_API_KEY=<token from ${DEFAULT_CLAIMED_API_KEY_PATH}>`,
+          "",
+          `Load PAPERCLIP_API_KEY from ${DEFAULT_CLAIMED_API_KEY_PATH} (the token you saved after claim-api-key).`,
+        ];
 
   const lines = [
     "Paperclip wake event for a cloud adapter.",
@@ -397,9 +475,7 @@ function buildWakeText(
     "",
     "Set these values in your run context:",
     ...envLines,
-    `PAPERCLIP_API_KEY=<token from ${claimedApiKeyPath}>`,
-    "",
-    `Load PAPERCLIP_API_KEY from ${claimedApiKeyPath} (the token you saved after claim-api-key).`,
+    ...credentialLines,
     "",
     `api_base=${apiBaseHint}`,
     `task_id=${payload.taskId ?? ""}`,
@@ -410,11 +486,7 @@ function buildWakeText(
     `approval_status=${payload.approvalStatus ?? ""}`,
     `linked_issue_ids=${payload.issueIds.join(",")}`,
     "",
-    "HTTP rules:",
-    "- Use Authorization: Bearer $PAPERCLIP_API_KEY on every API call.",
-    "- Use X-Paperclip-Run-Id: $PAPERCLIP_RUN_ID on every mutating API call.",
-    "- Use only /api endpoints listed below.",
-    "- Do NOT call guessed endpoints like /api/cloud-adapter/*, /api/cloud-adapters/*, /api/adapters/cloud/*, or /api/heartbeat.",
+    ...httpRuleLines,
     "",
     "Workflow:",
     "1) GET /api/agents/me",
@@ -471,6 +543,7 @@ function buildStandardPaperclipPayload(
   wakePayload: WakePayload,
   paperclipEnv: Record<string, string>,
   payloadTemplate: Record<string, unknown>,
+  callback: PaperclipCallbackMode,
 ): Record<string, unknown> {
   const templatePaperclip = parseObject(payloadTemplate.paperclip);
   const workspace = asRecord(ctx.context.paperclipWorkspace);
@@ -497,6 +570,7 @@ function buildStandardPaperclipPayload(
     approvalId: wakePayload.approvalId,
     approvalStatus: wakePayload.approvalStatus,
     apiUrl: paperclipEnv.PAPERCLIP_API_URL ?? null,
+    callback,
   };
   const structuredWake = parseObject(ctx.context.paperclipWake);
   if (Object.keys(structuredWake).length > 0) {
@@ -1108,6 +1182,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
 
   const wakePayload = buildWakePayload(ctx);
   const paperclipEnv = buildPaperclipEnvForWake(ctx, wakePayload);
+  const paperclipCallback = resolvePaperclipCallbackMode(ctx.config);
   const structuredWakePrompt = renderPaperclipWakePrompt(ctx.context.paperclipWake);
   const structuredWakeJson = stringifyPaperclipWakePayload(ctx.context.paperclipWake);
   const wakeText = buildWakeText(
@@ -1116,6 +1191,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     structuredWakeJson
       ? joinWakePayloadSections(structuredWakePrompt, structuredWakeJson)
       : structuredWakePrompt,
+    paperclipCallback,
   );
 
   const sessionKeyStrategy = normalizeSessionKeyStrategy(ctx.config.sessionKeyStrategy);
@@ -1130,7 +1206,13 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
 
   const templateMessage = nonEmpty(payloadTemplate.message) ?? nonEmpty(payloadTemplate.text);
   const message = templateMessage ? appendWakeText(templateMessage, wakeText) : wakeText;
-  const paperclipPayload = buildStandardPaperclipPayload(ctx, wakePayload, paperclipEnv, payloadTemplate);
+  const paperclipPayload = buildStandardPaperclipPayload(
+    ctx,
+    wakePayload,
+    paperclipEnv,
+    payloadTemplate,
+    paperclipCallback,
+  );
 
   const agentParams: Record<string, unknown> = {
     ...payloadTemplate,

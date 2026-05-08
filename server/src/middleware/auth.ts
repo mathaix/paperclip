@@ -201,10 +201,16 @@ export function actorMiddleware(db: Db, opts: ActorMiddlewareOptions): RequestHa
 
 async function resolveCloudTenantActor(db: Db, req: Request): Promise<Express.Request["actor"] | null> {
   const expectedToken = process.env.PAPERCLIP_CLOUD_TENANT_SERVER_TOKEN?.trim();
-  if (!expectedToken) return null;
-
   const token = req.header("x-paperclip-cloud-tenant-token")?.trim();
-  if (!token || !constantTimeStringEqual(token, expectedToken)) return null;
+  if (expectedToken) {
+    if (!token || !constantTimeStringEqual(token, expectedToken)) return null;
+  } else {
+    const hasCloudTenantHeaders =
+      Boolean(req.header("x-paperclip-cloud-stack-id")) ||
+      Boolean(req.header("x-paperclip-cloud-user-id")) ||
+      Boolean(req.header("x-paperclip-cloud-user-email"));
+    if (!hasCloudTenantHeaders || !trustCloudTenantHeadersWithoutToken()) return null;
+  }
 
   const userId = requiredCloudHeader(req, "x-paperclip-cloud-user-id");
   const userEmail = requiredCloudHeader(req, "x-paperclip-cloud-user-email").toLowerCase();
@@ -321,6 +327,11 @@ function stackMembershipRole(value: string | undefined): "owner" | "admin" | "me
     return value;
   }
   throw new Error("Invalid trusted Cloud tenant stack role");
+}
+
+function trustCloudTenantHeadersWithoutToken(): boolean {
+  const value = process.env.PAPERCLIP_TRUST_CLOUD_TENANT_HEADERS?.trim().toLowerCase();
+  return value === "1" || value === "true" || value === "yes";
 }
 
 function constantTimeStringEqual(left: string, right: string): boolean {

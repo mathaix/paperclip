@@ -47,6 +47,19 @@ maybeRepairLegacyWorktreeConfigAndEnvFiles();
 
 const TAILSCALE_DETECT_TIMEOUT_MS = 3000;
 
+export function resolveDatabaseUrl(rawUrl: string | undefined, databaseName: string | undefined): string | undefined {
+  const trimmedUrl = rawUrl?.trim();
+  if (!trimmedUrl) return undefined;
+  const trimmedDatabaseName = databaseName?.trim();
+  if (!trimmedDatabaseName) return trimmedUrl;
+  if (!/^[A-Za-z0-9_-]+$/.test(trimmedDatabaseName)) {
+    throw new Error("PAPERCLIP_DATABASE_NAME must contain only letters, numbers, underscores, or dashes");
+  }
+  const parsed = new URL(trimmedUrl);
+  parsed.pathname = `/${trimmedDatabaseName}`;
+  return parsed.toString();
+}
+
 type DatabaseMode = "embedded-postgres" | "postgres";
 
 export interface Config {
@@ -297,7 +310,7 @@ export function loadConfig(): Config {
     authPublicBaseUrl,
     authDisableSignUp,
     databaseMode: fileDatabaseMode,
-    databaseUrl: process.env.DATABASE_URL ?? fileDbUrl,
+    databaseUrl: resolveDatabaseUrl(process.env.DATABASE_URL ?? fileDbUrl, process.env.PAPERCLIP_DATABASE_NAME),
     databaseMigrationUrl: process.env.DATABASE_MIGRATION_URL,
     embeddedPostgresDataDir: resolveHomeAwarePath(
       fileConfig?.database.embeddedPostgresDataDir ?? resolveDefaultEmbeddedPostgresDir(),

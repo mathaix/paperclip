@@ -515,6 +515,49 @@ describe("openclaw gateway adapter execute", () => {
     }
   });
 
+  it("e2e forwards OCM metadata-proxy callback instructions without raw Paperclip API key", async () => {
+    const gateway = await createMockGatewayServer();
+
+    try {
+      const result = await execute(
+        buildContext({
+          url: gateway.url,
+          headers: {
+            "x-openclaw-token": "gateway-token",
+          },
+          paperclipCallbackMode: "openclaw_metadata_proxy",
+          paperclipContextPath: "/v1/admin/paperclip/context",
+          paperclipProxyBasePath: "/v1/admin/paperclip/proxy",
+          waitTimeoutMs: 2000,
+        }),
+      );
+
+      expect(result.exitCode).toBe(0);
+
+      const payload = gateway.getAgentPayload();
+      expect(payload).toBeTruthy();
+      const message = String(payload?.message ?? "");
+      expect(message).toContain("PAPERCLIP_CONTEXT_URL=$OCM_METADATA_URL/v1/admin/paperclip/context");
+      expect(message).toContain("PAPERCLIP_PROXY_BASE_URL=$OCM_METADATA_URL/v1/admin/paperclip/proxy");
+      expect(message).toContain("X-Metadata-Nonce: $OCM_METADATA_NONCE");
+      expect(message).toContain("binding_id=<binding_id>");
+      expect(message).toContain("Do NOT load PAPERCLIP_API_KEY");
+      expect(message).not.toContain("PAPERCLIP_API_KEY=<token");
+      expect(message).not.toContain("Authorization: Bearer $PAPERCLIP_API_KEY");
+      expect(payload?.paperclip).toMatchObject({
+        callback: {
+          mode: "openclaw_metadata_proxy",
+          contextPath: "/v1/admin/paperclip/context",
+          proxyBasePath: "/v1/admin/paperclip/proxy",
+          metadataUrlEnv: "OCM_METADATA_URL",
+          metadataNonceEnv: "OCM_METADATA_NONCE",
+        },
+      });
+    } finally {
+      await gateway.close();
+    }
+  });
+
   it("fails fast when url is missing", async () => {
     const result = await execute(buildContext({}));
     expect(result.exitCode).toBe(1);
