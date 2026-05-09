@@ -10,6 +10,7 @@ import { accessApi } from "../api/access";
 import { authApi } from "../api/auth";
 import { companiesApi } from "../api/companies";
 import { healthApi } from "../api/health";
+import { apiPath } from "@/lib/runtime-paths";
 import { getAdapterLabel } from "../adapters/adapter-display-registry";
 import { clearPendingInviteToken, rememberPendingInviteToken } from "../lib/invite-memory";
 import { queryKeys } from "../lib/queryKeys";
@@ -697,7 +698,7 @@ export function InviteLandingPage() {
                 <form
                   className="space-y-4"
                   method="post"
-                  action={authMode === "sign_up" ? "/api/auth/sign-up/email" : "/api/auth/sign-in/email"}
+                  action={authMode === "sign_up" ? apiPath("/auth/sign-up/email") : apiPath("/auth/sign-in/email")}
                   onSubmit={(event) => {
                     event.preventDefault();
                     if (authMutation.isPending) return;

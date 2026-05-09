@@ -3,6 +3,7 @@ import { StrictMode } from "react";
 import * as ReactDOM from "react-dom";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter } from "@/lib/router";
+import { appPath, paperclipRouterBasename } from "@/lib/runtime-paths";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { App } from "./App";
 import { CompanyProvider, useCompany } from "./context/CompanyContext";
@@ -24,7 +25,7 @@ initPluginBridge(React, ReactDOM);
 
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => {
-    navigator.serviceWorker.register("/sw.js");
+    navigator.serviceWorker.register(appPath("/sw.js"));
   });
 }
 
@@ -46,7 +47,7 @@ createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
       <ThemeProvider>
-        <BrowserRouter>
+        <BrowserRouter basename={paperclipRouterBasename}>
           <CompanyProvider>
             <EditorAutocompleteProvider>
               <ToastProvider>

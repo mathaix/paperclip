@@ -38,6 +38,8 @@ COPY patches/ patches/
 RUN pnpm install --frozen-lockfile
 
 FROM base AS build
+ARG VITE_PAPERCLIP_BASE_PATH=/
+ARG VITE_PAPERCLIP_API_BASE=/api
 WORKDIR /app
 COPY --from=deps /app /app
 COPY . .

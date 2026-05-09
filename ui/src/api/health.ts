@@ -1,3 +1,5 @@
+import { apiPath } from "@/lib/runtime-paths";
+
 export type DevServerHealthStatus = {
   enabled: true;
   restartRequired: boolean;
@@ -28,7 +30,7 @@ export type HealthStatus = {
 
 export const healthApi = {
   get: async (): Promise<HealthStatus> => {
-    const res = await fetch("/api/health", {
+    const res = await fetch(apiPath("/health"), {
       credentials: "include",
       headers: { Accept: "application/json" },
     });
