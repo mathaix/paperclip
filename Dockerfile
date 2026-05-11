@@ -47,6 +47,11 @@ RUN pnpm --filter @paperclipai/ui build
 RUN pnpm --filter @paperclipai/plugin-sdk build
 RUN pnpm --filter @paperclipai/server build
 RUN test -f server/dist/index.js || (echo "ERROR: server build output missing" && exit 1)
+# BuildKit normalises file mtimes for reproducible builds, which collides with
+# Express's weak ETag (size+mtime). Two builds with different VITE_* args end
+# up with identical ETags on ui/dist/index.html, so browsers stay on the old
+# bundle via 304. Touching index.html guarantees a fresh mtime per build.
+RUN touch ui/dist/index.html
 
 FROM base AS production
 ARG USER_UID=1000
